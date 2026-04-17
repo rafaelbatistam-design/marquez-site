@@ -1,0 +1,45 @@
+name: Atualizar Noticias Marquez Advogados
+
+on:
+  schedule:
+    - cron: '0 11 * * 1'
+  workflow_dispatch:
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Buscar noticias e atualizar index.html
+        run: python scripts/atualizar_noticias.py
+
+      - name: Verificar se houve mudancas
+        id: changes
+        run: |
+          git diff --quiet index.html && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Salvar index.html atualizado
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "Marquez Bot"
+          git config user.email "bot@marquezadvogados.com.br"
+          git add index.html scripts/ultimo_log.json
+          git commit -m "Noticias atualizadas - $(date +'%d/%m/%Y')"
+          git push
+
+      - name: Deploy no Netlify
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          npm install -g netlify-cli
+          netlify deploy --prod --dir . --filter index.html
