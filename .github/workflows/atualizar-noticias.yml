@@ -44,7 +44,6 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           npm install -g netlify-cli
-          netlify deploy --prod --dir . --filter index.html
+          netlify deploy --prod --dir . --auth $NETLIFY_AUTH_TOKEN --site ${{ secrets.NETLIFY_SITE_ID }}
