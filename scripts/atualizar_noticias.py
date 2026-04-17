@@ -1,270 +1,194 @@
 #!/usr/bin/env python3
 """
 Marquez Advogados — Atualizador automático de notícias
-Busca artigos do STJ, Conjur, Migalhas e Jota e atualiza o index.html
+Fontes: STJ Informativo, STJ Notícias, Conjur, Migalhas, Jota, TJSP
+Roda toda terça-feira às 20h (horário de Brasília = 23h UTC)
 """
 
 import urllib.request
 import xml.etree.ElementTree as ET
-import re
-import os
-import json
+import re, os, json
 from datetime import datetime, timezone
 from html import unescape
 
-# ── Configuração ──────────────────────────────────────────────────────────────
-
-FEEDS = [
-    {
-        "nome": "STJ",
-        "url": "https://processo.stj.jus.br/jurisprudencia/externo/InformativoFeed",
-        "label": "STJ — Informativo",
-    },
-    {
-        "nome": "Conjur",
-        "url": "https://www.conjur.com.br/feed/",
-        "label": "Conjur",
-    },
-    {
-        "nome": "Migalhas",
-        "url": "https://www.migalhas.com.br/rss/quentes",
-        "label": "Migalhas",
-    },
-    {
-        "nome": "Jota",
-        "url": "https://www.jota.info/feed",
-        "label": "Jota",
-    },
+FEEDS_RSS = [
+    {"nome":"STJ_INFO",    "url":"https://processo.stj.jus.br/jurisprudencia/externo/InformativoFeed","label":"STJ — Informativo","priority":1},
+    {"nome":"Conjur",      "url":"https://www.conjur.com.br/feed/",                                    "label":"Conjur",           "priority":2},
+    {"nome":"Migalhas",    "url":"https://www.migalhas.com.br/rss/quentes",                            "label":"Migalhas",         "priority":2},
+    {"nome":"Jota",        "url":"https://www.jota.info/feed",                                         "label":"Jota",             "priority":2},
 ]
 
-# Palavras-chave para filtrar artigos relevantes para as áreas do escritório
+PAGINAS_HTML = [
+    {"nome":"STJ_NOTICIAS","url":"https://www.stj.jus.br/sites/portalp/Comunicacao/Ultimas-noticias","label":"STJ — Notícias","priority":1},
+    {"nome":"TJSP",        "url":"https://www.tjsp.jus.br/SecaoDireitoPrivado/Gapri/BoletinsJulgadosSelecionados","label":"TJSP — Boletim","priority":2},
+]
+
 KEYWORDS = [
-    # Societário
-    "societário", "societaria", "sócio", "socios", "dissolução", "haveres",
-    "acordo de sócios", "joint venture", "fusão", "aquisição", "m&a",
-    "reestruturação", "due diligence", "governança",
-    # Contratos
-    "contrato", "contratos", "cláusula", "inadimplemento", "rescisão",
-    "take or pay", "mútuo", "fornecimento", "distribuição",
-    # Imobiliário
-    "imobiliário", "imóvel", "imóveis", "distrato", "incorporação",
-    "alienação fiduciária", "locação", "built to suit", "leilão",
-    # Família e Sucessões
-    "sucessão", "inventário", "herança", "holding familiar", "testamento",
-    "planejamento patrimonial", "partilha",
-    # Contencioso / Tribunais
-    "stj", "stf", "tribunal superior", "recurso especial", "recurso extraordinário",
-    "agência reguladora", "anatel", "aneel", "anvisa", "cade",
-    "arbitragem", "mediação", "litígio",
-    # Terceiro Setor
-    "incentivo fiscal", "lei rouanet", "terceiro setor", "ong", "impacto social",
-    # Geral empresarial
-    "empresarial", "empresas", "código civil", "reforma", "lgpd",
-    "compliance", "anticorrupção", "regulatório",
+    "societario","socio","dissolucao","haveres","joint venture","fusao","aquisicao",
+    "m&a","reestruturacao","due diligence","governanca","contrato","clausula",
+    "inadimplemento","rescisao","take or pay","mutuo","fornecimento","distribuicao",
+    "imobiliario","imovel","distrato","incorporacao","alienacao fiduciaria","locacao",
+    "leilao","sucessao","inventario","heranca","holding","testamento","partilha",
+    "stj","stf","tjsp","tribunal","recurso especial","agencia reguladora",
+    "arbitragem","mediacao","litigio","acordao","julgamento","turma",
+    "incentivo fiscal","terceiro setor","empresarial","codigo civil","lgpd",
+    "compliance","anticorrupcao","regulatorio","direito privado",
 ]
 
 MAX_NOTICIAS = 6
-MESES_PT = {
-    "Jan": "Jan", "Feb": "Fev", "Mar": "Mar", "Apr": "Abr",
-    "May": "Mai", "Jun": "Jun", "Jul": "Jul", "Aug": "Ago",
-    "Sep": "Set", "Oct": "Out", "Nov": "Nov", "Dec": "Dez",
-}
+MESES_PT = {"Jan":"Jan","Feb":"Fev","Mar":"Mar","Apr":"Abr","May":"Mai","Jun":"Jun",
+            "Jul":"Jul","Aug":"Ago","Sep":"Set","Oct":"Out","Nov":"Nov","Dec":"Dez"}
+HEADERS = {"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0 Safari/537.36",
+           "Accept":"text/html,application/xml,*/*","Accept-Language":"pt-BR,pt;q=0.9"}
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+def normalizar(t):
+    return t.lower().translate(str.maketrans('ãçéêóúáíàâôõü','aceeoualaaonu'))
 
-def formatar_data(data_str):
-    """Converte data RSS para formato 'Mmm YYYY' em português."""
-    formatos = [
-        "%a, %d %b %Y %H:%M:%S %z",
-        "%a, %d %b %Y %H:%M:%S GMT",
-        "%Y-%m-%dT%H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%d",
-    ]
-    for fmt in formatos:
+def formatar_data(s):
+    for fmt in ["%a, %d %b %Y %H:%M:%S %z","%a, %d %b %Y %H:%M:%S GMT",
+                "%Y-%m-%dT%H:%M:%S%z","%Y-%m-%dT%H:%M:%SZ","%Y-%m-%d","%d/%m/%Y"]:
         try:
-            dt = datetime.strptime(data_str.strip(), fmt)
-            mes_en = dt.strftime("%b")
-            mes_pt = MESES_PT.get(mes_en, mes_en)
-            return f"{mes_pt} {dt.year}"
-        except ValueError:
-            continue
-    return datetime.now().strftime("Abr %Y")
+            dt = datetime.strptime(s.strip(), fmt)
+            return f"{MESES_PT.get(dt.strftime('%b'),dt.strftime('%b'))} {dt.year}"
+        except: pass
+    return datetime.now().strftime("%b %Y")
 
-def limpar_html(texto):
-    """Remove tags HTML e limpa o texto."""
-    if not texto:
-        return ""
-    texto = re.sub(r'<[^>]+>', ' ', texto)
-    texto = unescape(texto)
-    texto = re.sub(r'\s+', ' ', texto).strip()
-    return texto
+def limpar(t):
+    if not t: return ""
+    return re.sub(r'\s+',' ',unescape(re.sub(r'<[^>]+>',' ',t))).strip()
 
-def truncar(texto, max_chars=160):
-    """Trunca texto preservando palavras completas."""
-    if len(texto) <= max_chars:
-        return texto
-    return texto[:max_chars].rsplit(' ', 1)[0].rstrip('.,;:') + '…'
+def truncar(t,n=165):
+    return t if len(t)<=n else t[:n].rsplit(' ',1)[0].rstrip('.,;:')+'\u2026'
 
-def e_relevante(titulo, descricao=""):
-    """Verifica se o artigo é relevante para as áreas do escritório."""
-    texto = (titulo + " " + descricao).lower()
-    # Remove acentos para comparação
-    texto = (texto.replace('ã', 'a').replace('ç', 'c').replace('é', 'e')
-             .replace('ê', 'e').replace('ó', 'o').replace('ú', 'u')
-             .replace('á', 'a').replace('í', 'i'))
-    for kw in KEYWORDS:
-        kw_norm = (kw.lower().replace('ã', 'a').replace('ç', 'c')
-                   .replace('é', 'e').replace('ê', 'e').replace('ó', 'o')
-                   .replace('ú', 'u').replace('á', 'a').replace('í', 'i'))
-        if kw_norm in texto:
-            return True
-    return False
+def e_relevante(titulo, desc="", nome=""):
+    if nome in ("STJ_INFO","STJ_NOTICIAS","TJSP"): return True
+    txt = normalizar(titulo+" "+desc)
+    return any(normalizar(k) in txt for k in KEYWORDS)
 
-def buscar_feed(feed):
-    """Busca e parseia um feed RSS, retorna lista de artigos."""
+def fetch(url):
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as r: return r.read()
+
+def buscar_rss(feed):
     artigos = []
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (compatible; MarquezAdvogados/1.0)',
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-    }
     try:
-        req = urllib.request.Request(feed["url"], headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            xml_data = resp.read()
-
-        root = ET.fromstring(xml_data)
-        # Suporte a RSS 2.0 e Atom
-        ns = {'atom': 'http://www.w3.org/2005/Atom'}
-        items = root.findall('.//item') or root.findall('.//atom:entry', ns)
-
-        for item in items[:20]:  # Analisa os 20 mais recentes
-            def get(tag, atom_tag=None):
-                el = item.find(tag)
-                if el is None and atom_tag:
-                    el = item.find(atom_tag, ns)
-                if el is not None and el.text:
-                    return el.text.strip()
-                # Tenta CDATA
-                if el is not None:
-                    return (el.text or "").strip()
-                return ""
-
-            titulo = limpar_html(get('title', 'atom:title'))
-            link = get('link', 'atom:link')
-            if not link:
-                link_el = item.find('atom:link', ns)
-                if link_el is not None:
-                    link = link_el.get('href', '')
-            descricao = limpar_html(get('description') or get('summary', 'atom:summary'))
-            data_str = get('pubDate') or get('published', 'atom:published') or get('updated', 'atom:updated')
-            data = formatar_data(data_str) if data_str else datetime.now().strftime("Abr %Y")
-
-            if not titulo or not link:
-                continue
-
-            if e_relevante(titulo, descricao):
-                artigos.append({
-                    "titulo": titulo,
-                    "link": link,
-                    "descricao": truncar(descricao) if descricao else "",
-                    "data": data,
-                    "fonte": feed["label"],
-                    "nome": feed["nome"],
-                })
-
-        print(f"  ✓ {feed['nome']}: {len(artigos)} artigos relevantes encontrados")
-
+        root = ET.fromstring(fetch(feed["url"]))
+        ns = {'a':'http://www.w3.org/2005/Atom'}
+        items = root.findall('.//item') or root.findall('.//a:entry',ns)
+        for it in items[:25]:
+            def g(tag,at=None):
+                el = it.find(tag)
+                if el is None and at: el = it.find(at,ns)
+                return (el.text or "").strip() if el is not None else ""
+            titulo = limpar(g('title','a:title'))
+            link = g('link','a:link') or (it.find('a:link',ns) or type('x',(),({"get":lambda s,k,d="":d})())).get('href','')
+            desc = limpar(g('description') or g('summary','a:summary'))
+            data = formatar_data(g('pubDate') or g('published','a:published') or g('updated','a:updated'))
+            if titulo and link and e_relevante(titulo,desc,feed["nome"]):
+                artigos.append({"titulo":titulo,"link":link,"descricao":truncar(desc),
+                                "data":data,"fonte":feed["label"],"nome":feed["nome"],"priority":feed["priority"]})
+        print(f"  ✓ {feed['nome']} (RSS): {len(artigos)}")
     except Exception as e:
-        print(f"  ✗ {feed['nome']}: erro — {e}")
-
+        print(f"  ✗ {feed['nome']} (RSS): {e}")
     return artigos
 
-def gerar_card(artigo, idx):
-    """Gera o HTML de um card de notícia."""
-    desc_html = f'\n        <p class="news-desc">{artigo["descricao"]}</p>' if artigo["descricao"] else ""
+def buscar_html(pagina):
+    artigos = []
+    try:
+        html = fetch(pagina["url"]).decode('utf-8','ignore')
+        links = re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]{15,200})</a>',html,re.I)
+        base = re.match(r'(https?://[^/]+)',pagina["url"])
+        base_url = base.group(1) if base else ""
+        data_str = f"{MESES_PT.get(datetime.now().strftime('%b'),'')} {datetime.now().year}"
+        vistos, unicos = set(), []
+        for href,txt in links[:60]:
+            titulo = limpar(txt)
+            if len(titulo)<15: continue
+            link = href if href.startswith('http') else (base_url+href if href.startswith('/') else None)
+            if not link: continue
+            if e_relevante(titulo,"",pagina["nome"]):
+                t = normalizar(titulo)
+                if t not in vistos:
+                    vistos.add(t)
+                    unicos.append({"titulo":titulo,"link":link,"descricao":"",
+                                   "data":data_str,"fonte":pagina["label"],"nome":pagina["nome"],"priority":pagina["priority"]})
+        print(f"  ✓ {pagina['nome']} (HTML): {len(unicos[:5])}")
+        artigos = unicos[:5]
+    except Exception as e:
+        print(f"  ✗ {pagina['nome']} (HTML): {e}")
+    return artigos
+
+def gerar_card(a):
+    desc = f'\n        <p class="news-desc">{a["descricao"]}</p>' if a["descricao"] else ""
     return f"""      <div class="news-card rv">
-        <div class="news-src">{artigo["fonte"]} &mdash; {artigo["data"]}</div>
-        <h3 class="news-title">{artigo["titulo"]}</h3>{desc_html}
-        <a href="{artigo["link"]}" target="_blank" rel="noopener" class="news-link">Ler artigo <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+        <div class="news-src">{a["fonte"]} &mdash; {a["data"]}</div>
+        <h3 class="news-title">{a["titulo"]}</h3>{desc}
+        <a href="{a["link"]}" target="_blank" rel="noopener" class="news-link">Ler artigo <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
       </div>"""
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
 def main():
-    print("=" * 60)
-    print(f"Marquez Advogados — Atualizador de Notícias")
-    print(f"Executado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print("=" * 60)
+    print("="*60)
+    print(f"Marquez Advogados — Atualizador | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    print("="*60)
 
-    # Buscar artigos de todas as fontes
     todos = []
-    for feed in FEEDS:
+    for feed in FEEDS_RSS:
         print(f"\nBuscando {feed['nome']}...")
-        artigos = buscar_feed(feed)
-        todos.extend(artigos)
+        todos.extend(buscar_rss(feed))
+    for pag in PAGINAS_HTML:
+        print(f"\nBuscando {pag['nome']}...")
+        todos.extend(buscar_html(pag))
 
-    # Se não houver artigos suficientes, manter os existentes
     if len(todos) < 3:
-        print(f"\n⚠ Poucos artigos encontrados ({len(todos)}). Mantendo notícias atuais.")
+        print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais.")
         return
 
-    # Selecionar os melhores: distribuir entre fontes quando possível
+    # Selecionar: prioridade alta primeiro, depois distribuir por fonte
+    alta = [a for a in todos if a["priority"]==1]
+    normal = [a for a in todos if a["priority"]==2]
+
     selecionados = []
+    # Até 2 de alta prioridade
+    for a in alta:
+        if len(selecionados)<2: selecionados.append(a)
+
+    # Completar com fontes normais
     por_fonte = {}
-    for a in todos:
-        por_fonte.setdefault(a["nome"], []).append(a)
-
-    # Pega até 2 de cada fonte, priorizando variedade
+    for a in normal: por_fonte.setdefault(a["nome"],[]).append(a)
     for _ in range(2):
-        for fonte in ["STJ", "Conjur", "Migalhas", "Jota"]:
-            if fonte in por_fonte and por_fonte[fonte] and len(selecionados) < MAX_NOTICIAS:
-                selecionados.append(por_fonte[fonte].pop(0))
+        for f in ["Conjur","Migalhas","Jota"]:
+            if f in por_fonte and por_fonte[f] and len(selecionados)<MAX_NOTICIAS:
+                selecionados.append(por_fonte[f].pop(0))
 
-    # Completa com o que restar se necessário
-    restantes = [a for fonte in por_fonte.values() for a in fonte]
-    while len(selecionados) < MAX_NOTICIAS and restantes:
+    restantes = [a for arts in por_fonte.values() for a in arts]
+    while len(selecionados)<MAX_NOTICIAS and restantes:
         selecionados.append(restantes.pop(0))
 
     print(f"\n✓ {len(selecionados)} notícias selecionadas:")
-    for a in selecionados:
-        print(f"  [{a['nome']}] {a['titulo'][:70]}...")
+    for a in selecionados: print(f"  [{a['nome']}] {a['titulo'][:72]}...")
 
-    # Ler index.html
-    html_path = "index.html"
-    if not os.path.exists(html_path):
-        print(f"\n✗ {html_path} não encontrado!")
+    if not os.path.exists("index.html"):
+        print("\n✗ index.html não encontrado!")
         return
 
-    with open(html_path, 'r', encoding='utf-8') as f:
-        html = f.read()
+    with open("index.html",'r',encoding='utf-8') as f: html = f.read()
 
-    # Gerar novo bloco de cards
-    novos_cards = "\n".join(gerar_card(a, i) for i, a in enumerate(selecionados))
-
-    # Substituir a news-grid existente
+    cards = "\n".join(gerar_card(a) for a in selecionados)
     pattern = r'(<div class="news-grid">)\s*.*?\s*(</div>\s*</div>\s*</section>\s*<div class="nl-bar)'
-    replacement = f'\\1\n{novos_cards}\n    \\2'
-    novo_html, n = re.subn(pattern, replacement, html, flags=re.DOTALL)
+    novo, n = re.subn(pattern, f'\\1\n{cards}\n    \\2', html, flags=re.DOTALL)
 
-    if n == 0:
-        print("\n✗ Não foi possível localizar a seção de notícias no HTML.")
+    if n==0:
+        print("\n✗ Seção de notícias não encontrada.")
         return
 
-    with open(html_path, 'w', encoding='utf-8') as f:
-        f.write(novo_html)
+    with open("index.html",'w',encoding='utf-8') as f: f.write(novo)
+    print("\n✓ index.html atualizado!")
 
-    print(f"\n✓ index.html atualizado com sucesso!")
-    print(f"  Notícias: {len(selecionados)} | Fontes: {set(a['nome'] for a in selecionados)}")
+    os.makedirs("scripts",exist_ok=True)
+    with open("scripts/ultimo_log.json","w") as f:
+        json.dump({"ultima_atualizacao":datetime.now(timezone.utc).isoformat(),
+                   "noticias":len(selecionados),
+                   "fontes":list(set(a["nome"] for a in selecionados))},f,indent=2,ensure_ascii=False)
 
-    # Salvar log
-    log = {
-        "ultima_atualizacao": datetime.now(timezone.utc).isoformat(),
-        "noticias": len(selecionados),
-        "fontes": list(set(a["nome"] for a in selecionados)),
-    }
-    with open("scripts/ultimo_log.json", "w") as f:
-        json.dump(log, f, indent=2, ensure_ascii=False)
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
