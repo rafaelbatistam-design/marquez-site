@@ -36,43 +36,6 @@ jobs:
           git commit -m "Noticias atualizadas - $(date +'%d/%m/%Y')"
           git push
 
-      - name: Deploy no Netlify via API
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          python3 << 'PYEOF'
-          import urllib.request, json, os, zipfile, io
-          token = os.environ["NETLIFY_AUTH_TOKEN"]
-          site_id = os.environ["NETLIFY_SITE_ID"]
-          # Ler o index.html
-          with open("index.html", "rb") as f:
-              html_data = f.read()
-          print(f"index.html: {len(html_data):,} bytes")
-          # Criar ZIP em memória com apenas o index.html
-          buf = io.BytesIO()
-          with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-              zf.writestr("index.html", html_data)
-          buf.seek(0)
-          zip_data = buf.read()
-          print(f"ZIP criado: {len(zip_data):,} bytes")
-          # Deploy via API REST
-          url = f"https://api.netlify.com/api/v1/sites/{site_id}/deploys"
-          print(f"Enviando para: {url}")
-          req = urllib.request.Request(url, data=zip_data, method="POST")
-          req.add_header("Authorization", f"Bearer {token}")
-          req.add_header("Content-Type", "application/zip")
-          try:
-              with urllib.request.urlopen(req, timeout=120) as r:
-                  resp = json.loads(r.read())
-                  print(f"Deploy OK: {resp.get('id','?')} | Estado: {resp.get('state','?')}")
-          except urllib.error.HTTPError as e:
-              body = e.read().decode()
-              print(f"Erro HTTP {e.code}: {body}")
-              raise
-          PYEOF
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-
       - name: Sem mudancas
         if: steps.changes.outputs.changed == 'false'
         run: echo "Nenhuma noticia nova. Site nao atualizado."
