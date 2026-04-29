@@ -1,18 +1,14 @@
 name: Atualizar Noticias Marquez Advogados
-
 on:
   schedule:
     - cron: '0 23 * * 2'
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   atualizar:
     runs-on: ubuntu-latest
     steps:
-
       - name: Baixar repositorio
         uses: actions/checkout@v4
         with:
@@ -45,16 +41,12 @@ jobs:
         run: |
           python3 << 'PYEOF'
           import urllib.request, json, os, zipfile, io
-
           token = os.environ["NETLIFY_AUTH_TOKEN"]
           site_id = os.environ["NETLIFY_SITE_ID"]
-
           # Ler o index.html
           with open("index.html", "rb") as f:
               html_data = f.read()
-
           print(f"index.html: {len(html_data):,} bytes")
-
           # Criar ZIP em memória com apenas o index.html
           buf = io.BytesIO()
           with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -62,15 +54,12 @@ jobs:
           buf.seek(0)
           zip_data = buf.read()
           print(f"ZIP criado: {len(zip_data):,} bytes")
-
           # Deploy via API REST
           url = f"https://api.netlify.com/api/v1/sites/{site_id}/deploys"
           print(f"Enviando para: {url}")
-
           req = urllib.request.Request(url, data=zip_data, method="POST")
           req.add_header("Authorization", f"Bearer {token}")
           req.add_header("Content-Type", "application/zip")
-
           try:
               with urllib.request.urlopen(req, timeout=120) as r:
                   resp = json.loads(r.read())
