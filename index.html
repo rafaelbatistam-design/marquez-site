@@ -6,7 +6,7 @@
 <meta name="description" content="Advocacia estratégica sob medida. Marquez Advogados — São Paulo e Brasília.">
 <title>Marquez Advogados</title>
 <meta property="og:title" content="Marquez Advogados">
-<meta property="og:description" content="Advocacia estratégica sob medida. Marquez Advogados — São Paulo e Brasília.">
+<meta property="og:description" content="Advocacia estratégica sob medida. Escritório boutique especializado em direito empresarial. São Paulo e Brasília.">
 <meta property="og:url" content="https://marquezadvogados.com.br/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
@@ -430,9 +430,7 @@ footer{background:var(--teal);padding:clamp(28px,4vw,48px) var(--pad);display:fl
         <div class="form-card">
           <h3 class="form-card-title">Analisar meu caso</h3>
           <p class="form-card-sub">Preencha o formulário e entraremos em contato em breve.</p>
-          <form name="analisar-caso" method="POST" data-netlify="true" netlify-honeypot="bot-field" id="casoForm">
-            <input type="hidden" name="form-name" value="analisar-caso">
-            <p style="display:none"><label>Não preencha: <input name="bot-field"></label></p>
+          <form action="https://formspree.io/f/mnjwabbq" method="POST" id="casoForm">
             <div class="form-field"><label>Nome completo</label><input type="text" name="nome" placeholder="Seu nome" required></div>
             <div class="form-field"><label>E-mail</label><input type="email" name="email" placeholder="seu@email.com" required></div>
             <div class="form-field"><label>Telefone / WhatsApp</label><input type="tel" name="telefone" placeholder="+55 (11) 00000-0000"></div>
@@ -491,9 +489,9 @@ if(casoForm){
     var btn=casoForm.querySelector('.btn-submit');
     btn.textContent='Enviando...';btn.disabled=true;
     var data=new FormData(casoForm);
-    fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(data).toString()})
+    fetch('https://formspree.io/f/mnjwabbq',{method:'POST',headers:{'Accept':'application/json'},body:data})
     .then(function(r){
-      if(r.ok||r.status===200||r.status===303){
+      if(r.ok){
         casoForm.style.display='none';
         formSuccess.style.display='block';
       } else {
@@ -501,7 +499,6 @@ if(casoForm){
       }
     })
     .catch(function(){
-      // Fallback: open mailto
       var nome=data.get('nome')||'';
       var email=data.get('email')||'';
       var area=data.get('area')||'';
