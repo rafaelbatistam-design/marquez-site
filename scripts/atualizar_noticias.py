@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Marquez Advogados — Atualizador automático de notícias
-Fontes: STJ Notícias, Conjur, Migalhas, Jota, TJSP
+Fontes: Conjur, Migalhas, Jota
 Roda toda terça-feira às 20h (horário de Brasília = 23h UTC)
 """
 
@@ -12,15 +12,9 @@ from datetime import datetime, timezone
 from html import unescape
 
 FEEDS_RSS = [
-    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",         "label":"Conjur",   "priority":2},
-    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss/quentes", "label":"Migalhas", "priority":2},
-    {"nome":"Jota",     "url":"https://www.jota.info/feed",              "label":"Jota",     "priority":2},
-]
-
-PAGINAS_HTML = [
-    {"nome":"STJ_NOTICIAS","url":"https://www.stj.jus.br/sites/portalp/Comunicacao/Ultimas-noticias",                             "label":"STJ — Notícias",  "priority":1},
-    {"nome":"STJ_INFO",    "url":"https://www.stj.jus.br/sites/portalp/Paginas/Comunicacao/Noticias.aspx",                        "label":"STJ — Informativo","priority":1},
-    {"nome":"TJSP",        "url":"https://www.tjsp.jus.br/SecaoDireitoPrivado/Gapri/BoletinsJulgadosSelecionados",                "label":"TJSP — Boletim",  "priority":1},
+    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",         "label":"Conjur",   "priority":1},
+    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss/quentes", "label":"Migalhas", "priority":1},
+    {"nome":"Jota",     "url":"https://www.jota.info/feed",              "label":"Jota",     "priority":1},
 ]
 
 # ---------------------------------------------------------------------------
@@ -120,7 +114,6 @@ def truncar(t,n=165):
     return t if len(t)<=n else t[:n].rsplit(' ',1)[0].rstrip('.,;:')+'\u2026'
 
 def e_relevante(titulo, desc=""):
-    """Filtra por palavras-chave das áreas de atuação. Aplicado a todas as fontes."""
     txt = normalizar(titulo + " " + desc)
     return any(normalizar(k) in txt for k in KEYWORDS)
 
@@ -151,32 +144,6 @@ def buscar_rss(feed):
         print(f"  ✗ {feed['nome']} (RSS): {e}")
     return artigos
 
-def buscar_html(pagina):
-    artigos = []
-    try:
-        html = fetch(pagina["url"]).decode('utf-8','ignore')
-        links = re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]{15,200})</a>',html,re.I)
-        base = re.match(r'(https?://[^/]+)',pagina["url"])
-        base_url = base.group(1) if base else ""
-        data_str = f"{MESES_PT.get(datetime.now().strftime('%b'),'')} {datetime.now().year}"
-        vistos, unicos = set(), []
-        for href,txt in links[:80]:
-            titulo = limpar(txt)
-            if len(titulo)<15: continue
-            link = href if href.startswith('http') else (base_url+href if href.startswith('/') else None)
-            if not link: continue
-            if e_relevante(titulo):
-                t = normalizar(titulo)
-                if t not in vistos:
-                    vistos.add(t)
-                    unicos.append({"titulo":titulo,"link":link,"descricao":"",
-                                   "data":data_str,"fonte":pagina["label"],"nome":pagina["nome"],"priority":pagina["priority"]})
-        print(f"  ✓ {pagina['nome']} (HTML): {len(unicos[:5])} relevantes")
-        artigos = unicos[:5]
-    except Exception as e:
-        print(f"  ✗ {pagina['nome']} (HTML): {e}")
-    return artigos
-
 def gerar_card(a):
     desc = f'\n        <p class="news-desc">{a["descricao"]}</p>' if a["descricao"] else ""
     return f"""      <div class="news-card rv">
@@ -194,9 +161,6 @@ def main():
     for feed in FEEDS_RSS:
         print(f"\nBuscando {feed['nome']}...")
         todos.extend(buscar_rss(feed))
-    for pag in PAGINAS_HTML:
-        print(f"\nBuscando {pag['nome']}...")
-        todos.extend(buscar_html(pag))
 
     print(f"\nTotal de artigos relevantes encontrados: {len(todos)}")
 
@@ -204,27 +168,16 @@ def main():
         print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais.")
         return
 
-    # Prioridade 1 (STJ, TJSP) primeiro, depois demais fontes
-    alta   = [a for a in todos if a["priority"] == 1]
-    normal = [a for a in todos if a["priority"] == 2]
-
-    selecionados = []
-    for a in alta:
-        if len(selecionados) < 2:
-            selecionados.append(a)
-
+    # Distribuir igualmente entre as 3 fontes
     por_fonte = {}
-    for a in normal:
+    for a in todos:
         por_fonte.setdefault(a["nome"], []).append(a)
 
-    for _ in range(2):
+    selecionados = []
+    for _ in range(MAX_NOTICIAS):
         for f in ["Conjur", "Migalhas", "Jota"]:
             if f in por_fonte and por_fonte[f] and len(selecionados) < MAX_NOTICIAS:
                 selecionados.append(por_fonte[f].pop(0))
-
-    restantes = [a for arts in por_fonte.values() for a in arts]
-    while len(selecionados) < MAX_NOTICIAS and restantes:
-        selecionados.append(restantes.pop(0))
 
     print(f"\n✓ {len(selecionados)} notícias selecionadas:")
     for a in selecionados:
