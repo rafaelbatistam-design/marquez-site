@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Marquez Advogados — Atualizador automático de notícias
-Fontes: Conjur, Migalhas, Jota
+Fontes: Conjur, Jota
 Roda toda terça-feira às 20h (horário de Brasília = 23h UTC)
 """
 
@@ -12,79 +12,87 @@ from datetime import datetime, timezone
 from html import unescape
 
 FEEDS_RSS = [
-    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",         "label":"Conjur",   "priority":1},
-    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss/quentes", "label":"Migalhas", "priority":1},
-    {"nome":"Jota",     "url":"https://www.jota.info/feed",              "label":"Jota",     "priority":1},
+    {"nome":"Conjur", "url":"https://www.conjur.com.br/feed/",  "label":"Conjur", "priority":1},
+    {"nome":"Jota",   "url":"https://www.jota.info/feed",       "label":"Jota",   "priority":1},
 ]
 
 # ---------------------------------------------------------------------------
-# Palavras-chave baseadas nas 7 áreas de atuação do escritório
+# Keywords extraídas diretamente das áreas de atuação do escritório
 # ---------------------------------------------------------------------------
 
-# Área 1 — Prevenção e Resolução de Disputas
-KW_DISPUTAS = [
-    "litigio","litigiosidade","mediacao","arbitragem","disputa","conflito empresarial",
-    "negociacao","acordo extrajudicial","resolucao de conflito","prevencao de litigio",
-    "risco juridico","avaliacao de risco","camara de arbitragem","conciliacao",
-]
+KEYWORDS = [
+    # --- CONTRATOS ---
+    "contrato","contratos","contratual","contratualmente",
+    "contrato comercial","contrato empresarial","contrato de compra e venda",
+    "contrato de locacao","contrato de prestacao de servicos",
+    "contrato de distribuicao","contrato de fornecimento",
+    "opcao de compra","stock option","contrato de investimento",
+    "mutuo conversivel","take or pay","joint venture","joint ventures",
+    "consorcio","consorcios","parceria empresarial","parcerias empresariais",
+    "inadimplemento contratual","rescisao contratual","revisao contratual",
+    "quebra contratual","inexecucao contratual","penalidade contratual",
+    "clausula contratual","distrato","negociacao contratual",
+    "elaboracao de contrato","redacao de contrato",
 
-# Área 2 — Direito Societário e Contencioso Societário
-KW_SOCIETARIO = [
-    "societario","direito societario","socio","dissolucao de sociedade","apuracao de haveres",
-    "joint venture","fusao","aquisicao","m&a","reestruturacao","reorganizacao societaria",
-    "due diligence","governanca corporativa","acordo de socios","participacao societaria",
-    "consorcio empresarial","alienacao de participacao","exclusao de socio","empresa familiar",
-    "holding","contencioso societario",
-]
+    # --- IMOBILIARIO E CONSTRUCAO ---
+    "imovel","imobiliario","imobiliaria","locacao","locatario","locador",
+    "aquisicao de imovel","imovel urbano","imovel rural",
+    "incorporacao imobiliaria","incorporadora","incorporacao",
+    "built to suit","construcao civil","construcao","construtora",
+    "dispute board","dispute boards","alienacao fiduciaria",
+    "leilao judicial","leilao extrajudicial","distrato imobiliario",
+    "contrato de locacao","despejo","retomada de imovel",
+    "due diligence imobiliaria","regularizacao fundiaria",
+    "condominio","compra e venda de imovel","registro de imovel",
 
-# Área 3 — Contencioso e Tribunais Superiores
-KW_TRIBUNAIS = [
-    "stj","stf","tribunal superior","recurso especial","recurso extraordinario",
-    "acordao","sustentacao oral","turma julgadora","sessao de julgamento",
-    "agencia regulatoria","anatel","aneel","anp","anvisa","antaq","antf",
-    "contencioso","regulatorio","jurisprudencia","tese juridica",
-    "repercussao geral","recursos repetitivos","informativo stj","informativo stf",
-    "segunda secao","terceira turma","quarta turma","direito privado stj",
-]
+    # --- PRE-LITIGIO E RESOLUCAO DE DISPUTAS ---
+    "pre-litigio","pre litigio","resolucao de disputas","resolucao de conflitos",
+    "mediacao","mediador","camara de mediacao","conciliacao","conciliador",
+    "arbitragem","arbitro","camara de arbitragem","tribunal arbitral",
+    "clausula compromissoria","compromisso arbitral","sentenca arbitral",
+    "negociacao","acordo extrajudicial","prevencao de litigio",
+    "avaliacao de risco","gestao de conflito",
 
-# Área 4 — Contratos
-KW_CONTRATOS = [
-    "contrato","clausula contratual","take or pay","inadimplemento","rescisao contratual",
-    "distrato","distribuicao","fornecimento","prestacao de servicos",
-    "compra e venda","stock option","mutuo conversivel","contrato de investimento",
-    "opcao de compra","revisao contratual","quebra contratual",
-    "inexecucao","penalidade contratual","codigo civil contrato","teoria dos contratos",
-]
+    # --- FAMILIA, SUCESSOES E INVENTARIOS ---
+    "inventario","heranca","espolio","partilha","testamento",
+    "planejamento sucessorio","planejamento patrimonial","sucessao",
+    "holding familiar","holding patrimonial","doacao","meacao",
+    "divorcio","separacao","uniao estavel","regime de bens",
+    "direito de familia","curatela","tutela","guarda",
+    "disputa familiar","litigio familiar","conflito familiar",
+    "transmissao de patrimonio","succession",
 
-# Área 5 — Imobiliário e Construção
-KW_IMOBILIARIO = [
-    "imobiliario","imovel","locacao","incorporacao imobiliaria","alienacao fiduciaria",
-    "leilao judicial","leilao extrajudicial","built to suit","distrato imobiliario",
-    "aquisicao de imovel","construcao civil","dispute board","registro de imovel",
-    "incorporadora","construtora","condominio","regularizacao fundiaria",
-    "contrato de locacao","despejo","mercado imobiliario",
-]
+    # --- DISPUTAS SOCIETARIAS ---
+    "disputa societaria","litigio societario","contencioso societario",
+    "apuracao de haveres","dissolucao de sociedade","dissolucao parcial",
+    "exclusao de socio","retirada de socio","direito de retirada",
+    "acordo de socios","conflito entre socios","briga de socios",
+    "desconsideracao da personalidade juridica","responsabilidade do socio",
+    "societario","direito societario","governanca corporativa",
+    "reestruturacao societaria","reorganizacao societaria",
+    "aquisicao de participacao","alienacao de participacao",
+    "due diligence","m&a","fusao","aquisicao","cisao","incorporacao societaria",
 
-# Área 6 — Família, Sucessões e Inventários
-KW_SUCESSOES = [
-    "sucessao","inventario","heranca","holding familiar","holding patrimonial",
-    "testamento","partilha","planejamento sucessorio","planejamento patrimonial",
-    "transmissao de patrimonio","doacao","meacao","divorcio","uniao estavel",
-    "direito de familia","curatela","tutela","espolio","direito sucessorio",
-]
+    # --- DISPUTAS CONTRATUAIS ---
+    "disputa contratual","litigio contratual","conflito contratual",
+    "inadimplemento","inadimplente","mora","execucao contratual",
 
-# Área 7 — Terceiro Setor e Incentivos Fiscais
-KW_TERCEIRO_SETOR = [
-    "terceiro setor","incentivo fiscal","impacto social","lei de incentivo",
-    "osc","oscip","fundacao","associacao sem fins lucrativos",
-    "lei rouanet","patrocinio cultural","deducao fiscal","beneficio fiscal",
-    "responsabilidade social","entidade filantropica","titulo de utilidade publica",
-]
+    # --- DISPUTAS IMOBILIARIAS ---
+    "disputa imobiliaria","litigio imobiliario","conflito imobiliario",
+    "despejo","reintegracao de posse","acao possessoria","usucapiao",
 
-KEYWORDS = (
-    KW_DISPUTAS + KW_SOCIETARIO + KW_TRIBUNAIS + KW_CONTRATOS +
-    KW_IMOBILIARIO + KW_SUCESSOES + KW_TERCEIRO_SETOR
-)
+    # --- RESPONSABILIDADE CIVIL ---
+    "responsabilidade civil","dano","indenizacao","reparacao de danos",
+    "responsabilidade contratual","responsabilidade extracontratual",
+    "ato ilicito","nexo causal","dano moral","dano material","dano emergente",
+    "lucro cessante","perda de chance",
+
+    # --- QUESTOES REGULATORIAS ---
+    "regulatorio","regulatoria","agencia reguladora","anatel","aneel",
+    "anp","anvisa","antaq","antf","cvm","bacen","banco central",
+    "compliance","licenciamento","autorizacao regulatoria",
+    "infração regulatoria","processo administrativo","auto de infracao",
+]
 
 # ---------------------------------------------------------------------------
 
@@ -95,7 +103,8 @@ HEADERS = {"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0 Safari/537
            "Accept":"text/html,application/xml,*/*","Accept-Language":"pt-BR,pt;q=0.9"}
 
 def normalizar(t):
-    return t.lower().translate(str.maketrans('ãçéêóúáíàâôõü','aceeoualaaonu'))
+    return t.lower().translate(str.maketrans('ãáàâäçéêëíîïóôõöúûüý',
+                                             'aaaaceeeiiiooooouuuy'))
 
 def formatar_data(s):
     for fmt in ["%a, %d %b %Y %H:%M:%S %z","%a, %d %b %Y %H:%M:%S GMT",
@@ -115,7 +124,10 @@ def truncar(t,n=165):
 
 def e_relevante(titulo, desc=""):
     txt = normalizar(titulo + " " + desc)
-    return any(normalizar(k) in txt for k in KEYWORDS)
+    matched = [k for k in KEYWORDS if normalizar(k) in txt]
+    if matched:
+        print(f"    → match: {matched[:3]}")
+    return len(matched) > 0
 
 def fetch(url):
     req = urllib.request.Request(url, headers=HEADERS)
@@ -127,7 +139,7 @@ def buscar_rss(feed):
         root = ET.fromstring(fetch(feed["url"]))
         ns = {'a':'http://www.w3.org/2005/Atom'}
         items = root.findall('.//item') or root.findall('.//a:entry',ns)
-        for it in items[:25]:
+        for it in items[:30]:
             def g(tag,at=None):
                 el = it.find(tag)
                 if el is None and at: el = it.find(at,ns)
@@ -136,12 +148,14 @@ def buscar_rss(feed):
             link = g('link','a:link') or (it.find('a:link',ns) or type('x',(),({"get":lambda s,k,d="":d})())).get('href','')
             desc = limpar(g('description') or g('summary','a:summary'))
             data = formatar_data(g('pubDate') or g('published','a:published') or g('updated','a:updated'))
-            if titulo and link and e_relevante(titulo, desc):
-                artigos.append({"titulo":titulo,"link":link,"descricao":truncar(desc),
-                                "data":data,"fonte":feed["label"],"nome":feed["nome"],"priority":feed["priority"]})
-        print(f"  ✓ {feed['nome']} (RSS): {len(artigos)} relevantes")
+            if titulo and link:
+                print(f"  Checando: {titulo[:60]}...")
+                if e_relevante(titulo, desc):
+                    artigos.append({"titulo":titulo,"link":link,"descricao":truncar(desc),
+                                    "data":data,"fonte":feed["label"],"nome":feed["nome"],"priority":feed["priority"]})
+        print(f"  ✓ {feed['nome']}: {len(artigos)} relevantes de {len(items)} verificados")
     except Exception as e:
-        print(f"  ✗ {feed['nome']} (RSS): {e}")
+        print(f"  ✗ {feed['nome']}: {e}")
     return artigos
 
 def gerar_card(a):
@@ -162,20 +176,20 @@ def main():
         print(f"\nBuscando {feed['nome']}...")
         todos.extend(buscar_rss(feed))
 
-    print(f"\nTotal de artigos relevantes encontrados: {len(todos)}")
+    print(f"\nTotal relevantes: {len(todos)}")
 
-    if len(todos) < 3:
+    if len(todos) < 2:
         print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais.")
         return
 
-    # Distribuir igualmente entre as 3 fontes
+    # Distribuir igualmente entre as fontes
     por_fonte = {}
     for a in todos:
         por_fonte.setdefault(a["nome"], []).append(a)
 
     selecionados = []
     for _ in range(MAX_NOTICIAS):
-        for f in ["Conjur", "Migalhas", "Jota"]:
+        for f in ["Conjur", "Jota"]:
             if f in por_fonte and por_fonte[f] and len(selecionados) < MAX_NOTICIAS:
                 selecionados.append(por_fonte[f].pop(0))
 
