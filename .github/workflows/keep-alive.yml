@@ -1,0 +1,27 @@
+name: Keep Alive
+
+on:
+  schedule:
+    - cron: '0 10 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Manter repositorio ativo
+        run: |
+          git config user.name "Marquez Bot"
+          git config user.email "bot@marquezadvogados.com.br"
+          echo "Ultima verificacao: $(date)" > .last-ping
+          git add .last-ping
+          git commit -m "Keep alive - $(date +'%d/%m/%Y')" || echo "Nada"
+          git push || echo "OK"
