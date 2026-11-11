@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Marquez Advogados — Atualizador automático de notícias
-Fontes: Conjur, Jota
+Fontes: Conjur, Migalhas, Jota
 Roda toda terça-feira às 20h (horário de Brasília = 23h UTC)
 """
 
@@ -12,15 +12,20 @@ from datetime import datetime, timezone
 from html import unescape
 
 FEEDS_RSS = [
-    {"nome":"Conjur", "url":"https://www.conjur.com.br/feed/",  "label":"Conjur", "priority":1},
-    {"nome":"Jota",   "url":"https://www.jota.info/feed",       "label":"Jota",   "priority":1},
+    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",          "label":"Conjur",   "priority":1},
+    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss/quentes",   "label":"Migalhas", "priority":1},
+    {"nome":"Jota",     "url":"https://www.jota.info/feed",                "label":"Jota",     "priority":1},
 ]
 
 # ---------------------------------------------------------------------------
-# Keywords extraídas diretamente das áreas de atuação do escritório
+# Keywords extraídas das áreas de atuação do escritório
+# IMPORTANTE: palavras simples exigem correspondência exata (não substring)
 # ---------------------------------------------------------------------------
 
 KEYWORDS = [
+    # --- ESCRITÓRIO E ADVOGADO ---
+    "Rafael Marquez","Marquez Advogados","marquez advogados",
+
     # --- CONTRATOS ---
     "contrato","contratos","contratual","contratualmente",
     "contrato comercial","contrato empresarial","contrato de compra e venda",
@@ -35,13 +40,13 @@ KEYWORDS = [
     "elaboracao de contrato","redacao de contrato",
 
     # --- IMOBILIARIO E CONSTRUCAO ---
-    "imovel","imobiliario","imobiliaria","locacao","locatario","locador",
+    "imovel","imobiliario","imobiliaria","locatario","locador",
     "aquisicao de imovel","imovel urbano","imovel rural",
-    "incorporacao imobiliaria","incorporadora","incorporacao",
-    "built to suit","construcao civil","construcao","construtora",
+    "incorporacao imobiliaria","incorporadora",
+    "built to suit","construcao civil","construtora",
     "dispute board","dispute boards","alienacao fiduciaria",
     "leilao judicial","leilao extrajudicial","distrato imobiliario",
-    "contrato de locacao","despejo","retomada de imovel",
+    "despejo","retomada de imovel",
     "due diligence imobiliaria","regularizacao fundiaria",
     "condominio","compra e venda de imovel","registro de imovel",
 
@@ -50,17 +55,18 @@ KEYWORDS = [
     "mediacao","mediador","camara de mediacao","conciliacao","conciliador",
     "arbitragem","arbitro","camara de arbitragem","tribunal arbitral",
     "clausula compromissoria","compromisso arbitral","sentenca arbitral",
-    "negociacao","acordo extrajudicial","prevencao de litigio",
+    "acordo extrajudicial","prevencao de litigio",
     "avaliacao de risco","gestao de conflito",
 
     # --- FAMILIA, SUCESSOES E INVENTARIOS ---
     "inventario","heranca","espolio","partilha","testamento",
-    "planejamento sucessorio","planejamento patrimonial","sucessao",
+    "planejamento sucessorio","planejamento patrimonial",
     "holding familiar","holding patrimonial","doacao","meacao",
-    "divorcio","separacao","uniao estavel","regime de bens",
-    "direito de familia","curatela","tutela","guarda",
+    "divorcio","uniao estavel","regime de bens",
+    "direito de familia","curatela","tutela",
+    "guarda de bens","guarda de menores","guarda compartilhada",
     "disputa familiar","litigio familiar","conflito familiar",
-    "transmissao de patrimonio","succession",
+    "transmissao de patrimonio","sucessao",
 
     # --- DISPUTAS SOCIETARIAS ---
     "disputa societaria","litigio societario","contencioso societario",
@@ -71,32 +77,35 @@ KEYWORDS = [
     "societario","direito societario","governanca corporativa",
     "reestruturacao societaria","reorganizacao societaria",
     "aquisicao de participacao","alienacao de participacao",
-    "due diligence","m&a","fusao","aquisicao","cisao","incorporacao societaria",
+    "due diligence","m&a","fusao","aquisicao",
+    "cisao societaria","cisao de empresa","incorporacao societaria",
 
     # --- DISPUTAS CONTRATUAIS ---
     "disputa contratual","litigio contratual","conflito contratual",
-    "inadimplemento","inadimplente","mora","execucao contratual",
+    "inadimplemento","inadimplente","execucao contratual",
 
     # --- DISPUTAS IMOBILIARIAS ---
     "disputa imobiliaria","litigio imobiliario","conflito imobiliario",
-    "despejo","reintegracao de posse","acao possessoria","usucapiao",
+    "reintegracao de posse","acao possessoria","usucapiao",
 
     # --- RESPONSABILIDADE CIVIL ---
-    "responsabilidade civil","dano","indenizacao","reparacao de danos",
+    "responsabilidade civil","indenizacao","reparacao de danos",
     "responsabilidade contratual","responsabilidade extracontratual",
     "ato ilicito","nexo causal","dano moral","dano material","dano emergente",
     "lucro cessante","perda de chance",
 
     # --- QUESTOES REGULATORIAS ---
-    "regulatorio","regulatoria","agencia reguladora","anatel","aneel",
-    "anp","anvisa","antaq","antf","cvm","bacen","banco central",
+    "agencia reguladora","anatel","aneel","anp","anvisa","antaq","antf",
+    "cvm","bacen","banco central",
     "compliance","licenciamento","autorizacao regulatoria",
-    "infração regulatoria","processo administrativo","auto de infracao",
+    "infracao regulatoria","processo administrativo","auto de infracao",
 ]
 
 # ---------------------------------------------------------------------------
 
 MAX_NOTICIAS = 6
+FONTES_ORDEM = ["Conjur", "Migalhas", "Jota"]
+
 MESES_PT = {"Jan":"Jan","Feb":"Fev","Mar":"Mar","Apr":"Abr","May":"Mai","Jun":"Jun",
             "Jul":"Jul","Aug":"Ago","Sep":"Set","Oct":"Out","Nov":"Nov","Dec":"Dez"}
 HEADERS = {"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0 Safari/537.36",
@@ -124,7 +133,17 @@ def truncar(t,n=165):
 
 def e_relevante(titulo, desc=""):
     txt = normalizar(titulo + " " + desc)
-    matched = [k for k in KEYWORDS if normalizar(k) in txt]
+    matched = []
+    for k in KEYWORDS:
+        kn = normalizar(k)
+        if ' ' in kn:
+            # Frase com múltiplas palavras: busca como substring
+            if kn in txt:
+                matched.append(k)
+        else:
+            # Palavra única: exige correspondência exata (evita "guarda" em "aguardado")
+            if re.search(r'(?<![a-z])' + re.escape(kn) + r'(?![a-z])', txt):
+                matched.append(k)
     if matched:
         print(f"    → match: {matched[:3]}")
     return len(matched) > 0
@@ -136,23 +155,32 @@ def fetch(url):
 def buscar_rss(feed):
     artigos = []
     try:
-        root = ET.fromstring(fetch(feed["url"]))
+        raw = fetch(feed["url"])
+        root = ET.fromstring(raw)
         ns = {'a':'http://www.w3.org/2005/Atom'}
         items = root.findall('.//item') or root.findall('.//a:entry',ns)
         for it in items[:30]:
-            def g(tag,at=None):
+            def g(tag, at=None):
                 el = it.find(tag)
-                if el is None and at: el = it.find(at,ns)
-                return (el.text or "").strip() if el is not None else ""
+                if el is None and at:
+                    el = it.find(at, ns)
+                if el is not None:
+                    return (el.text or "").strip()
+                return ""
             titulo = limpar(g('title','a:title'))
-            link = g('link','a:link') or (it.find('a:link',ns) or type('x',(),({"get":lambda s,k,d="":d})())).get('href','')
+            # Trata link: pode ser elemento de texto ou atributo href (Atom)
+            link_el = it.find('link') or it.find('a:link', ns)
+            if link_el is not None:
+                link = (link_el.text or link_el.get('href', '')).strip()
+            else:
+                link = ""
             desc = limpar(g('description') or g('summary','a:summary'))
             data = formatar_data(g('pubDate') or g('published','a:published') or g('updated','a:updated'))
             if titulo and link:
-                print(f"  Checando: {titulo[:60]}...")
+                print(f"  Checando: {titulo[:70]}...")
                 if e_relevante(titulo, desc):
                     artigos.append({"titulo":titulo,"link":link,"descricao":truncar(desc),
-                                    "data":data,"fonte":feed["label"],"nome":feed["nome"],"priority":feed["priority"]})
+                                    "data":data,"fonte":feed["label"],"nome":feed["nome"]})
         print(f"  ✓ {feed['nome']}: {len(artigos)} relevantes de {len(items)} verificados")
     except Exception as e:
         print(f"  ✗ {feed['nome']}: {e}")
@@ -182,14 +210,14 @@ def main():
         print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais.")
         return
 
-    # Distribuir igualmente entre as fontes
+    # Distribuir igualmente entre as fontes (round-robin)
     por_fonte = {}
     for a in todos:
         por_fonte.setdefault(a["nome"], []).append(a)
 
     selecionados = []
     for _ in range(MAX_NOTICIAS):
-        for f in ["Conjur", "Jota"]:
+        for f in FONTES_ORDEM:
             if f in por_fonte and por_fonte[f] and len(selecionados) < MAX_NOTICIAS:
                 selecionados.append(por_fonte[f].pop(0))
 
@@ -205,16 +233,20 @@ def main():
         html = f.read()
 
     cards = "\n".join(gerar_card(a) for a in selecionados)
-    pattern = r'(<div class="news-grid">)\s*.*?\s*(</div>\s*</div>\s*</section>\s*<div class="nl-bar)'
+
+    # Regex corrigido: captura de <div class="news-grid"> até </section>
+    # O HTML termina com: </div>\n  </div>\n</section><div class="photo-banner rv">
+    pattern = r'(<div class="news-grid">).*?(</div>\s*</div>\s*</section>)'
     novo, n = re.subn(pattern, f'\\1\n{cards}\n    \\2', html, flags=re.DOTALL)
 
     if n == 0:
-        print("\n✗ Seção de notícias não encontrada.")
+        print("\n✗ Seção de notícias não encontrada no index.html.")
+        print("  Verifique se o HTML contém <div class=\"news-grid\"> ... </section>")
         return
 
     with open("index.html", 'w', encoding='utf-8') as f:
         f.write(novo)
-    print("\n✓ index.html atualizado!")
+    print("\n✓ index.html atualizado com sucesso!")
 
     os.makedirs("scripts", exist_ok=True)
     with open("scripts/ultimo_log.json", "w") as f:
