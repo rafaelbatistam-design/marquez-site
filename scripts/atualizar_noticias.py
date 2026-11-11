@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from html import unescape
 
 FEEDS_RSS = [
-    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",          "label":"Conjur",   "priority":1},
-    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss/quentes",   "label":"Migalhas", "priority":1},
-    {"nome":"Jota",     "url":"https://www.jota.info/feed",                "label":"Jota",     "priority":1},
+    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",      "label":"Conjur",   "priority":1},
+    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss",      "label":"Migalhas", "priority":1},
+    {"nome":"Jota",     "url":"https://www.jota.info/feed",           "label":"Jota",     "priority":1},
 ]
 
 # ---------------------------------------------------------------------------
@@ -24,7 +24,8 @@ FEEDS_RSS = [
 
 KEYWORDS = [
     # --- ESCRITÓRIO E ADVOGADO ---
-    "Rafael Marquez","Marquez Advogados","marquez advogados",
+    "Rafael Marquez","Rafael Batista Marquez","Rafael B. Marquez",
+    "Marquez Advogados","marquez advogados",
 
     # --- CONTRATOS ---
     "contrato","contratos","contratual","contratualmente",
@@ -94,7 +95,12 @@ KEYWORDS = [
     "ato ilicito","nexo causal","dano moral","dano material","dano emergente",
     "lucro cessante","perda de chance",
 
+    # --- RECUPERACAO JUDICIAL E INSOLVENCIA ---
+    "recuperacao judicial","recuperacao extrajudicial","falencia","insolvencia",
+    "plano de recuperacao","credores","assembleia de credores",
+
     # --- QUESTOES REGULATORIAS ---
+    "regulatorio","regulatoria","regulacao","regulador",
     "agencia reguladora","anatel","aneel","anp","anvisa","antaq","antf",
     "cvm","bacen","banco central",
     "compliance","licenciamento","autorizacao regulatoria",
