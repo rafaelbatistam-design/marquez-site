@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Marquez Advogados — Atualizador automático de notícias
-Fontes: Conjur, Migalhas, Jota
+Fontes: Conjur (RSS), Migalhas (HTML), Jota (RSS)
 Roda toda terça-feira às 20h (horário de Brasília = 23h UTC)
 """
 
@@ -11,93 +11,90 @@ import re, os, json
 from datetime import datetime, timezone
 from html import unescape
 
+# ---------------------------------------------------------------------------
+# Fontes RSS
+# ---------------------------------------------------------------------------
 FEEDS_RSS = [
-    {"nome":"Conjur",   "url":"https://www.conjur.com.br/feed/",      "label":"Conjur",   "priority":1},
-    {"nome":"Migalhas", "url":"https://www.migalhas.com.br/rss",      "label":"Migalhas", "priority":1},
-    {"nome":"Jota",     "url":"https://www.jota.info/feed",           "label":"Jota",     "priority":1},
+    {"nome":"Conjur", "url":"https://www.conjur.com.br/feed/", "label":"Conjur"},
+    {"nome":"Jota",   "url":"https://www.jota.info/feed",      "label":"Jota"},
 ]
 
+# URL de scraping do Migalhas (sem RSS)
+MIGALHAS_URL = "https://www.migalhas.com.br/quentes"
+
 # ---------------------------------------------------------------------------
-# Keywords extraídas das áreas de atuação do escritório
-# IMPORTANTE: palavras simples exigem correspondência exata (não substring)
+# Keywords das áreas de atuação do escritório
+#
+# NOTA: matching por substring — "contrato" captura também "contratação",
+# "contratual", "contratante", etc. As palavras que geravam falso positivo
+# ("guarda", "cisão") foram removidas como termo solo e mantidas apenas
+# em expressões compostas ("guarda de bens", "cisão societária").
 # ---------------------------------------------------------------------------
 
 KEYWORDS = [
     # --- ESCRITÓRIO E ADVOGADO ---
     "Rafael Marquez","Rafael Batista Marquez","Rafael B. Marquez",
-    "Marquez Advogados","marquez advogados",
+    "Marquez Advogados",
 
     # --- CONTRATOS ---
-    "contrato","contratos","contratual","contratualmente",
-    "contrato comercial","contrato empresarial","contrato de compra e venda",
-    "contrato de locacao","contrato de prestacao de servicos",
-    "contrato de distribuicao","contrato de fornecimento",
-    "opcao de compra","stock option","contrato de investimento",
-    "mutuo conversivel","take or pay","joint venture","joint ventures",
-    "consorcio","consorcios","parceria empresarial","parcerias empresariais",
+    "contrato","contratual","contrato comercial","contrato empresarial",
+    "contrato de compra e venda","contrato de locacao",
+    "contrato de prestacao de servicos","contrato de distribuicao",
+    "contrato de fornecimento","opcao de compra","stock option",
+    "contrato de investimento","mutuo conversivel","take or pay",
+    "joint venture","consorcio","parceria empresarial",
     "inadimplemento contratual","rescisao contratual","revisao contratual",
     "quebra contratual","inexecucao contratual","penalidade contratual",
     "clausula contratual","distrato","negociacao contratual",
-    "elaboracao de contrato","redacao de contrato",
 
     # --- IMOBILIARIO E CONSTRUCAO ---
     "imovel","imobiliario","imobiliaria","locatario","locador",
-    "aquisicao de imovel","imovel urbano","imovel rural",
-    "incorporacao imobiliaria","incorporadora",
+    "aquisicao de imovel","incorporacao imobiliaria","incorporadora",
     "built to suit","construcao civil","construtora",
-    "dispute board","dispute boards","alienacao fiduciaria",
+    "dispute board","alienacao fiduciaria",
     "leilao judicial","leilao extrajudicial","distrato imobiliario",
-    "despejo","retomada de imovel",
-    "due diligence imobiliaria","regularizacao fundiaria",
-    "condominio","compra e venda de imovel","registro de imovel",
+    "despejo","retomada de imovel","due diligence imobiliaria",
+    "regularizacao fundiaria","condominio","compra e venda de imovel",
+    "multipropriedade","loteamento",
 
     # --- PRE-LITIGIO E RESOLUCAO DE DISPUTAS ---
-    "pre-litigio","pre litigio","resolucao de disputas","resolucao de conflitos",
-    "mediacao","mediador","camara de mediacao","conciliacao","conciliador",
+    "mediacao","mediador","camara de mediacao","conciliacao",
     "arbitragem","arbitro","camara de arbitragem","tribunal arbitral",
     "clausula compromissoria","compromisso arbitral","sentenca arbitral",
-    "acordo extrajudicial","prevencao de litigio",
-    "avaliacao de risco","gestao de conflito",
+    "acordo extrajudicial","resolucao de disputas","resolucao de conflitos",
+    "pre-litigio","prevencao de litigio",
 
     # --- FAMILIA, SUCESSOES E INVENTARIOS ---
     "inventario","heranca","espolio","partilha","testamento",
-    "planejamento sucessorio","planejamento patrimonial",
+    "planejamento sucessorio","planejamento patrimonial","sucessao",
     "holding familiar","holding patrimonial","doacao","meacao",
     "divorcio","uniao estavel","regime de bens",
     "direito de familia","curatela","tutela",
     "guarda de bens","guarda de menores","guarda compartilhada",
-    "disputa familiar","litigio familiar","conflito familiar",
-    "transmissao de patrimonio","sucessao",
+    "disputa familiar","litigio familiar","transmissao de patrimonio",
 
     # --- DISPUTAS SOCIETARIAS ---
     "disputa societaria","litigio societario","contencioso societario",
     "apuracao de haveres","dissolucao de sociedade","dissolucao parcial",
-    "exclusao de socio","retirada de socio","direito de retirada",
-    "acordo de socios","conflito entre socios","briga de socios",
-    "desconsideracao da personalidade juridica","responsabilidade do socio",
+    "exclusao de socio","retirada de socio","acordo de socios",
+    "conflito entre socios","desconsideracao da personalidade juridica",
     "societario","direito societario","governanca corporativa",
-    "reestruturacao societaria","reorganizacao societaria",
-    "aquisicao de participacao","alienacao de participacao",
-    "due diligence","m&a","fusao","aquisicao",
+    "reestruturacao societaria","aquisicao de participacao",
+    "due diligence","m&a","fusao","aquisicao de empresa",
     "cisao societaria","cisao de empresa","incorporacao societaria",
 
-    # --- DISPUTAS CONTRATUAIS ---
-    "disputa contratual","litigio contratual","conflito contratual",
-    "inadimplemento","inadimplente","execucao contratual",
-
-    # --- DISPUTAS IMOBILIARIAS ---
-    "disputa imobiliaria","litigio imobiliario","conflito imobiliario",
-    "reintegracao de posse","acao possessoria","usucapiao",
+    # --- DISPUTAS CONTRATUAIS E IMOBILIARIAS ---
+    "disputa contratual","litigio contratual","inadimplemento",
+    "disputa imobiliaria","reintegracao de posse","acao possessoria","usucapiao",
 
     # --- RESPONSABILIDADE CIVIL ---
     "responsabilidade civil","indenizacao","reparacao de danos",
-    "responsabilidade contratual","responsabilidade extracontratual",
-    "ato ilicito","nexo causal","dano moral","dano material","dano emergente",
-    "lucro cessante","perda de chance",
+    "responsabilidade contratual","dano moral","dano material",
+    "dano emergente","lucro cessante","perda de chance",
 
-    # --- RECUPERACAO JUDICIAL E INSOLVENCIA ---
-    "recuperacao judicial","recuperacao extrajudicial","falencia","insolvencia",
-    "plano de recuperacao","credores","assembleia de credores",
+    # --- RECUPERACAO JUDICIAL ---
+    "recuperacao judicial","recuperacao extrajudicial","falencia",
+    "plano de recuperacao","assembleia de credores",
 
     # --- QUESTOES REGULATORIAS ---
     "regulatorio","regulatoria","regulacao","regulador",
@@ -134,81 +131,136 @@ def limpar(t):
     if not t: return ""
     return re.sub(r'\s+',' ',unescape(re.sub(r'<[^>]+>',' ',t))).strip()
 
-def truncar(t,n=165):
-    return t if len(t)<=n else t[:n].rsplit(' ',1)[0].rstrip('.,;:')+'\u2026'
+def truncar(t, n=165):
+    return t if len(t) <= n else t[:n].rsplit(' ',1)[0].rstrip('.,;:')+'\u2026'
 
 def e_relevante(titulo, desc=""):
+    """
+    Verifica se o artigo é relevante para as áreas de atuação do escritório.
+    Usa matching por substring após normalização (sem acento, minúsculas).
+    Palavras problemáticas ('guarda', 'cisão') só existem em formas compostas
+    na lista de keywords, evitando falsos positivos.
+    """
     txt = normalizar(titulo + " " + desc)
-    matched = []
-    for k in KEYWORDS:
-        kn = normalizar(k)
-        if ' ' in kn:
-            # Frase com múltiplas palavras: busca como substring
-            if kn in txt:
-                matched.append(k)
-        else:
-            # Palavra única: exige correspondência exata (evita "guarda" em "aguardado")
-            if re.search(r'(?<![a-z])' + re.escape(kn) + r'(?![a-z])', txt):
-                matched.append(k)
+    matched = [k for k in KEYWORDS if normalizar(k) in txt]
     if matched:
         print(f"    → match: {matched[:3]}")
     return len(matched) > 0
 
 def fetch(url):
     req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=15) as r: return r.read()
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read()
 
+# ---------------------------------------------------------------------------
+# Busca RSS (Conjur, Jota)
+# ---------------------------------------------------------------------------
 def buscar_rss(feed):
     artigos = []
     try:
-        raw = fetch(feed["url"])
-        root = ET.fromstring(raw)
-        ns = {'a':'http://www.w3.org/2005/Atom'}
-        items = root.findall('.//item') or root.findall('.//a:entry',ns)
+        root = ET.fromstring(fetch(feed["url"]))
+        ns = {'a': 'http://www.w3.org/2005/Atom'}
+        items = root.findall('.//item') or root.findall('.//a:entry', ns)
         for it in items[:30]:
             def g(tag, at=None):
                 el = it.find(tag)
                 if el is None and at:
                     el = it.find(at, ns)
-                if el is not None:
-                    return (el.text or "").strip()
-                return ""
-            titulo = limpar(g('title','a:title'))
-            # Trata link: pode ser elemento de texto ou atributo href (Atom)
+                return (el.text or "").strip() if el is not None else ""
+
+            titulo = limpar(g('title', 'a:title'))
             link_el = it.find('link') or it.find('a:link', ns)
+            link = ""
             if link_el is not None:
                 link = (link_el.text or link_el.get('href', '')).strip()
-            else:
-                link = ""
-            desc = limpar(g('description') or g('summary','a:summary'))
-            data = formatar_data(g('pubDate') or g('published','a:published') or g('updated','a:updated'))
+            desc = limpar(g('description') or g('summary', 'a:summary'))
+            data = formatar_data(
+                g('pubDate') or g('published', 'a:published') or g('updated', 'a:updated')
+            )
             if titulo and link:
                 print(f"  Checando: {titulo[:70]}...")
                 if e_relevante(titulo, desc):
-                    artigos.append({"titulo":titulo,"link":link,"descricao":truncar(desc),
-                                    "data":data,"fonte":feed["label"],"nome":feed["nome"]})
+                    artigos.append({
+                        "titulo": titulo, "link": link, "descricao": truncar(desc),
+                        "data": data, "fonte": feed["label"], "nome": feed["nome"]
+                    })
         print(f"  ✓ {feed['nome']}: {len(artigos)} relevantes de {len(items)} verificados")
     except Exception as e:
         print(f"  ✗ {feed['nome']}: {e}")
     return artigos
 
+# ---------------------------------------------------------------------------
+# Busca HTML do Migalhas (sem RSS)
+# ---------------------------------------------------------------------------
+def buscar_migalhas():
+    artigos = []
+    try:
+        raw = fetch(MIGALHAS_URL).decode('utf-8', errors='replace')
+        # Artigos têm URLs no formato /quentes/DIGITOS/slug
+        padrao_url = r'href="(https://www\.migalhas\.com\.br/quentes/\d+/[^"]+)"'
+        # Título pode estar no atributo title= ou no texto do link
+        padrao_completo = re.compile(
+            r'href="(https://www\.migalhas\.com\.br/quentes/\d+/[^"]+)"'
+            r'(?:[^>]*title="([^"]*)")?[^>]*>([^<]{10,})</a>',
+            re.IGNORECASE
+        )
+        seen = set()
+        for m in padrao_completo.finditer(raw):
+            url, title_attr, link_text = m.groups()
+            titulo = limpar(title_attr or link_text)
+            if titulo and len(titulo) > 15 and url not in seen:
+                seen.add(url)
+                # Tenta extrair mês/ano da URL ou usa mês atual
+                data_match = re.search(r'/(\d{4})-(\d{2})-', url)
+                if data_match:
+                    ano, mes_num = data_match.groups()
+                    meses = ["","Jan","Fev","Mar","Abr","Mai","Jun",
+                             "Jul","Ago","Set","Out","Nov","Dez"]
+                    data = f"{meses[int(mes_num)]} {ano}"
+                else:
+                    data = datetime.now().strftime("%b %Y")
+
+                print(f"  Checando: {titulo[:70]}...")
+                if e_relevante(titulo):
+                    artigos.append({
+                        "titulo": titulo, "link": url, "descricao": "",
+                        "data": data, "fonte": "Migalhas", "nome": "Migalhas"
+                    })
+            if len(seen) >= 50:
+                break
+
+        print(f"  ✓ Migalhas: {len(artigos)} relevantes de {len(seen)} verificados")
+    except Exception as e:
+        print(f"  ✗ Migalhas: {e}")
+    return artigos
+
+# ---------------------------------------------------------------------------
+# Gera card HTML para o site
+# ---------------------------------------------------------------------------
 def gerar_card(a):
-    desc = f'\n        <p class="news-desc">{a["descricao"]}</p>' if a["descricao"] else ""
+    desc = f'\n        <p class="news-desc">{a["descricao"]}</p>' if a.get("descricao") else ""
     return f"""      <div class="news-card rv">
         <div class="news-src">{a["fonte"]} &mdash; {a["data"]}</div>
         <h3 class="news-title">{a["titulo"]}</h3>{desc}
         <a href="{a["link"]}" target="_blank" rel="noopener" class="news-link">Ler artigo <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
       </div>"""
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
     print("="*60)
     print(f"Marquez Advogados — Atualizador | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print("="*60)
 
     todos = []
+
     for feed in FEEDS_RSS:
         print(f"\nBuscando {feed['nome']}...")
         todos.extend(buscar_rss(feed))
+
+    print(f"\nBuscando Migalhas (HTML)...")
+    todos.extend(buscar_migalhas())
 
     print(f"\nTotal relevantes: {len(todos)}")
 
@@ -216,7 +268,7 @@ def main():
         print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais.")
         return
 
-    # Distribuir igualmente entre as fontes (round-robin)
+    # Distribui igualmente entre as fontes (round-robin)
     por_fonte = {}
     for a in todos:
         por_fonte.setdefault(a["nome"], []).append(a)
@@ -240,14 +292,12 @@ def main():
 
     cards = "\n".join(gerar_card(a) for a in selecionados)
 
-    # Regex corrigido: captura de <div class="news-grid"> até </section>
-    # O HTML termina com: </div>\n  </div>\n</section><div class="photo-banner rv">
+    # Regex: captura de <div class="news-grid"> até </section>
     pattern = r'(<div class="news-grid">).*?(</div>\s*</div>\s*</section>)'
     novo, n = re.subn(pattern, f'\\1\n{cards}\n    \\2', html, flags=re.DOTALL)
 
     if n == 0:
         print("\n✗ Seção de notícias não encontrada no index.html.")
-        print("  Verifique se o HTML contém <div class=\"news-grid\"> ... </section>")
         return
 
     with open("index.html", 'w', encoding='utf-8') as f:
@@ -256,10 +306,11 @@ def main():
 
     os.makedirs("scripts", exist_ok=True)
     with open("scripts/ultimo_log.json", "w") as f:
-        json.dump({"ultima_atualizacao": datetime.now(timezone.utc).isoformat(),
-                   "noticias": len(selecionados),
-                   "fontes": list(set(a["nome"] for a in selecionados))},
-                  f, indent=2, ensure_ascii=False)
+        json.dump({
+            "ultima_atualizacao": datetime.now(timezone.utc).isoformat(),
+            "noticias": len(selecionados),
+            "fontes": list(set(a["nome"] for a in selecionados))
+        }, f, indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
     main()
