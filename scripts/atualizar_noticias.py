@@ -196,38 +196,53 @@ def buscar_migalhas():
     artigos = []
     try:
         raw = fetch(MIGALHAS_URL).decode('utf-8', errors='replace')
-        # Artigos têm URLs no formato /quentes/DIGITOS/slug
-        padrao_url = r'href="(https://www\.migalhas\.com\.br/quentes/\d+/[^"]+)"'
-        # Título pode estar no atributo title= ou no texto do link
-        padrao_completo = re.compile(
-            r'href="(https://www\.migalhas\.com\.br/quentes/\d+/[^"]+)"'
-            r'(?:[^>]*title="([^"]*)")?[^>]*>([^<]{10,})</a>',
-            re.IGNORECASE
-        )
-        seen = set()
-        for m in padrao_completo.finditer(raw):
-            url, title_attr, link_text = m.groups()
-            titulo = limpar(title_attr or link_text)
-            if titulo and len(titulo) > 15 and url not in seen:
-                seen.add(url)
-                # Tenta extrair mês/ano da URL ou usa mês atual
-                data_match = re.search(r'/(\d{4})-(\d{2})-', url)
-                if data_match:
-                    ano, mes_num = data_match.groups()
-                    meses = ["","Jan","Fev","Mar","Abr","Mai","Jun",
-                             "Jul","Ago","Set","Out","Nov","Dez"]
-                    data = f"{meses[int(mes_num)]} {ano}"
-                else:
-                    data = datetime.now().strftime("%b %Y")
 
-                print(f"  Checando: {titulo[:70]}...")
-                if e_relevante(titulo):
-                    artigos.append({
-                        "titulo": titulo, "link": url, "descricao": "",
-                        "data": data, "fonte": "Migalhas", "nome": "Migalhas"
-                    })
+        # Extrai todas as tags <a> e procura as que apontam para /quentes/DIGITS/slug
+        # URLs podem ser relativas (/quentes/...) ou absolutas (https://...quentes/...)
+        anchor_re = re.compile(r'<a\s([^>]{5,500})>', re.IGNORECASE | re.DOTALL)
+        seen = set()
+
+        for m in anchor_re.finditer(raw):
+            attrs = m.group(1)
+
+            # Busca href com padrão de artigo do Migalhas
+            href_m = re.search(r'href="([^"]*quentes/\d+/[^"#?]+)"', attrs, re.IGNORECASE)
+            if not href_m:
+                continue
+
+            url = href_m.group(1)
+            if url.startswith('/'):
+                url = 'https://www.migalhas.com.br' + url
+            if url in seen:
+                continue
+            seen.add(url)
+
+            # Título: prefere atributo title=, senão deriva do slug
+            title_m = re.search(r'title="([^"]{10,})"', attrs, re.IGNORECASE)
+            if title_m:
+                titulo = limpar(title_m.group(1))
+            else:
+                slug = url.split('/')[-1]
+                titulo = slug.replace('-', ' ').capitalize()
+
+            if len(titulo) < 15:
+                continue
+
+            data = datetime.now().strftime("%b %Y")
+
+            print(f"  Checando: {titulo[:70]}...")
+            if e_relevante(titulo):
+                artigos.append({
+                    "titulo": titulo, "link": url, "descricao": "",
+                    "data": data, "fonte": "Migalhas", "nome": "Migalhas"
+                })
+
             if len(seen) >= 50:
                 break
+
+        if len(seen) == 0:
+            print(f"  ⚠ Migalhas: nenhum link encontrado. Trecho do HTML:")
+            print(f"    {raw[:300]}")
 
         print(f"  ✓ Migalhas: {len(artigos)} relevantes de {len(seen)} verificados")
     except Exception as e:
