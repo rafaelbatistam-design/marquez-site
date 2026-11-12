@@ -19,8 +19,12 @@ FEEDS_RSS = [
     {"nome":"Jota",   "url":"https://www.jota.info/feed",      "label":"Jota"},
 ]
 
-# URL de scraping do Migalhas (sem RSS)
-MIGALHAS_URL = "https://www.migalhas.com.br/quentes"
+# URLs de scraping do Migalhas (sem RSS) — quentes pág 1 e 2 + depeso
+MIGALHAS_URLS = [
+    "https://www.migalhas.com.br/quentes",
+    "https://www.migalhas.com.br/quentes?pagina=2",
+    "https://www.migalhas.com.br/depeso",
+]
 
 # ---------------------------------------------------------------------------
 # Keywords das áreas de atuação do escritório
@@ -184,7 +188,7 @@ def buscar_rss(feed):
                         "titulo": titulo, "link": link, "descricao": truncar(desc),
                         "data": data, "fonte": feed["label"], "nome": feed["nome"]
                     })
-        print(f"  ✓ {feed['nome']}: {len(artigos)} relevantes de {len(items)} verificados")
+        print(f"  ✓ {feed['nome']}: {len(artigos)} relevantes de {min(len(items),30)} verificados")
     except Exception as e:
         print(f"  ✗ {feed['nome']}: {e}")
     return artigos
@@ -192,21 +196,19 @@ def buscar_rss(feed):
 # ---------------------------------------------------------------------------
 # Busca HTML do Migalhas (sem RSS)
 # ---------------------------------------------------------------------------
-def buscar_migalhas():
+def _scrape_migalhas_pagina(url_pagina, seen):
+    """Raspa uma página do Migalhas e retorna artigos encontrados (sem duplicatas)."""
     artigos = []
     try:
-        raw = fetch(MIGALHAS_URL).decode('utf-8', errors='replace')
-
-        # Extrai todas as tags <a> e procura as que apontam para /quentes/DIGITS/slug
-        # URLs podem ser relativas (/quentes/...) ou absolutas (https://...quentes/...)
+        raw = fetch(url_pagina).decode('utf-8', errors='replace')
         anchor_re = re.compile(r'<a\s([^>]{5,500})>', re.IGNORECASE | re.DOTALL)
-        seen = set()
 
         for m in anchor_re.finditer(raw):
             attrs = m.group(1)
-
-            # Busca href com padrão de artigo do Migalhas
-            href_m = re.search(r'href="([^"]*quentes/\d+/[^"#?]+)"', attrs, re.IGNORECASE)
+            # Aceita links de /quentes/DIGITS/ ou /depeso/DIGITS/
+            href_m = re.search(
+                r'href="([^"]*(?:quentes|depeso)/\d+/[^"#?]+)"', attrs, re.IGNORECASE
+            )
             if not href_m:
                 continue
 
@@ -228,25 +230,32 @@ def buscar_migalhas():
             if len(titulo) < 15:
                 continue
 
-            data = datetime.now().strftime("%b %Y")
-
             print(f"  Checando: {titulo[:70]}...")
             if e_relevante(titulo):
                 artigos.append({
                     "titulo": titulo, "link": url, "descricao": "",
-                    "data": data, "fonte": "Migalhas", "nome": "Migalhas"
+                    "data": datetime.now().strftime("%b %Y"),
+                    "fonte": "Migalhas", "nome": "Migalhas"
                 })
 
-            if len(seen) >= 50:
-                break
-
-        if len(seen) == 0:
-            print(f"  ⚠ Migalhas: nenhum link encontrado. Trecho do HTML:")
-            print(f"    {raw[:300]}")
-
-        print(f"  ✓ Migalhas: {len(artigos)} relevantes de {len(seen)} verificados")
     except Exception as e:
-        print(f"  ✗ Migalhas: {e}")
+        print(f"  ⚠ Erro em {url_pagina}: {e}")
+    return artigos
+
+
+def buscar_migalhas():
+    artigos = []
+    seen = set()
+    total_verificados = 0
+
+    for pagina_url in MIGALHAS_URLS:
+        novos = _scrape_migalhas_pagina(pagina_url, seen)
+        artigos.extend(novos)
+        total_verificados = len(seen)
+
+    if total_verificados == 0:
+        print(f"  ⚠ Migalhas: nenhum link encontrado em nenhuma página.")
+    print(f"  ✓ Migalhas: {len(artigos)} relevantes de {total_verificados} verificados")
     return artigos
 
 # ---------------------------------------------------------------------------
