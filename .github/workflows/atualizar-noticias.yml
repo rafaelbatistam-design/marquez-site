@@ -1,7 +1,7 @@
 name: Atualizar Noticias Marquez Advogados
 on:
   schedule:
-    - cron: '0 23 * * 2'
+    - cron: '0 23 * * 2,5'
   workflow_dispatch:
 permissions:
   contents: write
