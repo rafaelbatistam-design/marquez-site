@@ -86,10 +86,18 @@ KEYWORDS = [
     "reestruturacao societaria","aquisicao de participacao",
     "due diligence","m&a","fusao","aquisicao de empresa",
     "cisao societaria","cisao de empresa","incorporacao societaria",
+    "socio","socios","quotas","cotas sociais","participacao societaria",
 
     # --- DISPUTAS CONTRATUAIS E IMOBILIARIAS ---
     "disputa contratual","litigio contratual","inadimplemento",
     "disputa imobiliaria","reintegracao de posse","acao possessoria","usucapiao",
+
+    # --- LITIGIO CIVIL E PROCESSO ---
+    "processo civil","execucao de sentenca","execucao civil",
+    "excesso de execucao","cumprimento de sentenca","tutela provisoria",
+    "tutela de urgencia","liminar","antecipacao de tutela",
+    "honorarios","sucumbencia","custas processuais",
+    "prova pericial","prova processual","perito",
 
     # --- RESPONSABILIDADE CIVIL ---
     "responsabilidade civil","indenizacao","reparacao de danos",
@@ -288,8 +296,8 @@ def main():
 
     print(f"\nTotal relevantes: {len(todos)}")
 
-    if len(todos) < 2:
-        print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais.")
+    if len(todos) < 3:
+        print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais (mínimo: 3).")
         return
 
     # Distribui igualmente entre as fontes (round-robin)
