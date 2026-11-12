@@ -19,11 +19,15 @@ FEEDS_RSS = [
     {"nome":"Jota",   "url":"https://www.jota.info/feed",      "label":"Jota"},
 ]
 
-# URLs de scraping do Migalhas (sem RSS) — quentes pág 1 e 2 + depeso
+# URLs de scraping do Migalhas (sem RSS) — quentes págs 1-5 + depeso págs 1-2
 MIGALHAS_URLS = [
     "https://www.migalhas.com.br/quentes",
     "https://www.migalhas.com.br/quentes?pagina=2",
+    "https://www.migalhas.com.br/quentes?pagina=3",
+    "https://www.migalhas.com.br/quentes?pagina=4",
+    "https://www.migalhas.com.br/quentes?pagina=5",
     "https://www.migalhas.com.br/depeso",
+    "https://www.migalhas.com.br/depeso?pagina=2",
 ]
 
 # ---------------------------------------------------------------------------
@@ -296,8 +300,8 @@ def main():
 
     print(f"\nTotal relevantes: {len(todos)}")
 
-    if len(todos) < 3:
-        print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais (mínimo: 3).")
+    if len(todos) < 2:
+        print(f"\n⚠ Poucos artigos ({len(todos)}). Mantendo atuais (mínimo: 2).")
         return
 
     # Distribui igualmente entre as fontes (round-robin)
